@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sin conexión · Ice-T</title>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex; align-items: center; justify-content: center;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+        color: #fff; text-align: center; padding: 24px;
+      }
+      .card { max-width: 360px; }
+      h1 { font-size: 22px; margin-bottom: 8px; }
+      p { opacity: .9; line-height: 1.5; margin-bottom: 20px; }
+      button {
+        background: #fff; color: #0284c7; border: none; border-radius: 12px;
+        padding: 12px 20px; font-weight: 600; font-size: 15px; cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>❄️ Sin conexión</h1>
+      <p>No hay internet en este momento. Si ya visitaste esta página antes, algunas secciones seguirán disponibles. Las ventas que registres se guardarán en el dispositivo y se sincronizarán automáticamente al reconectar.</p>
+      <button onclick="location.reload()">Reintentar</button>
+    </div>
+  </body>
+</html>

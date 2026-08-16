@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#g)"/>
+  <g stroke="#ffffff" stroke-width="26" stroke-linecap="round" transform="translate(256,256)">
+    <line x1="0" y1="-140" x2="0" y2="140"/>
+    <line x1="-121" y1="-70" x2="121" y2="70"/>
+    <line x1="-121" y1="70" x2="121" y2="-70"/>
+    <g>
+      <line x1="0" y1="-140" x2="-38" y2="-102"/>
+      <line x1="0" y1="-140" x2="38" y2="-102"/>
+      <line x1="0" y1="140" x2="-38" y2="102"/>
+      <line x1="0" y1="140" x2="38" y2="102"/>
+      <line x1="-121" y1="-70" x2="-121" y2="-24"/>
+      <line x1="-121" y1="-70" x2="-79" y2="-93"/>
+      <line x1="121" y1="70" x2="121" y2="24"/>
+      <line x1="121" y1="70" x2="79" y2="93"/>
+      <line x1="-121" y1="70" x2="-121" y2="24"/>
+      <line x1="-121" y1="70" x2="-79" y2="93"/>
+      <line x1="121" y1="-70" x2="121" y2="-24"/>
+      <line x1="121" y1="-70" x2="79" y2="-93"/>
+    </g>
+  </g>
+</svg>
