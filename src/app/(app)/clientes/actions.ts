@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
-import { clienteSchema, entregaSchema } from "@/lib/validation";
+import { clienteSchema, entregaSchema, primerMensajeDeError } from "@/lib/validation";
 import { safeDbError } from "@/lib/errors";
 
 export interface ActionResult {
@@ -15,7 +15,7 @@ export async function crearCliente(input: unknown): Promise<ActionResult> {
   const ctx = await requireSession();
   const parsed = clienteSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+    return { ok: false, error: primerMensajeDeError(parsed.error) };
   }
 
   const supabase = await createClient();
@@ -34,7 +34,7 @@ export async function actualizarCliente(id: string, input: unknown): Promise<Act
   const ctx = await requireSession();
   const parsed = clienteSchema.partial().safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+    return { ok: false, error: primerMensajeDeError(parsed.error) };
   }
 
   const supabase = await createClient();
@@ -92,7 +92,7 @@ export async function registrarEntrega(
 
   const parsed = entregaSchema.safeParse({ customerId, deliveryDate, nextRestockDate });
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+    return { ok: false, error: primerMensajeDeError(parsed.error) };
   }
 
   const supabase = await createClient();

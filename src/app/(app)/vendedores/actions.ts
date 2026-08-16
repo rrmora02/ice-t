@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { vendedorInviteSchema } from "@/lib/validation";
+import { vendedorInviteSchema, primerMensajeDeError } from "@/lib/validation";
 import { safeDbError } from "@/lib/errors";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -66,7 +66,7 @@ export async function crearVendedor(input: unknown): Promise<ActionResult> {
   const ctx = await requireAdmin();
   const parsed = vendedorInviteSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+    return { ok: false, error: primerMensajeDeError(parsed.error) };
   }
 
   const admin = createAdminClient();

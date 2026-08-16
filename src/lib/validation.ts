@@ -51,6 +51,32 @@ function campoNumerico(
 }
 
 /**
+ * Campo de texto opcional que se normaliza a `null` cuando viene vacío.
+ *
+ * INVARIANTE IMPORTANTE: estos esquemas se aplican DOS veces sobre el mismo
+ * dato. El formulario valida en el navegador y react-hook-form entrega al
+ * server action la SALIDA ya transformada; el server action vuelve a
+ * parsear esa salida (no confía en el cliente). Por eso el esquema tiene
+ * que aceptar su propio resultado: si transforma `""` en `null`, tiene que
+ * admitir `null` como entrada válida.
+ *
+ * Antes estos campos eran `.optional().or(z.literal(""))`, que acepta
+ * `undefined` y `""` pero NO `null`. El navegador convertía `""` en `null`,
+ * lo mandaba al servidor y el servidor rechazaba ese `null` con el mensaje
+ * genérico de zod, "Invalid input" — así que guardar un cliente nuevo
+ * fallaba siempre y sin explicación útil.
+ */
+function textoOpcional(max: number, etiqueta: string) {
+  return z
+    .string()
+    .trim()
+    .max(max, `${etiqueta} no puede pasar de ${max} caracteres.`)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v : null));
+}
+
+/**
  * Fecha en formato ISO corto (YYYY-MM-DD), tal como la entrega un
  * `<input type="date">`. Antes estos campos eran `z.string()` a secas, así
  * que cualquier cadena llegaba hasta Postgres y el error de parseo (con el
@@ -61,9 +87,10 @@ export const fechaISO = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
   .refine((v) => !Number.isNaN(Date.parse(v)), "Fecha inválida");
 
+// Igual que textoOpcional: acepta null (su propia salida), "" y undefined.
 const fechaOpcional = fechaISO
-  .optional()
   .nullable()
+  .optional()
   .or(z.literal(""))
   .transform((v) => (v ? v : null));
 
@@ -96,34 +123,16 @@ export const productoSchema = z.object({
 export const clienteSchema = z.object({
   name: z.string().trim().min(2, "El nombre es muy corto").max(120),
   customer_type: z.enum(["tienda", "restaurante", "particular", "otro"]),
-  phone: z
-    .string()
-    .trim()
-    .max(30)
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v ? v : null)),
-  address: z
-    .string()
-    .trim()
-    .max(300)
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v ? v : null)),
-  notes: z
-    .string()
-    .trim()
-    .max(500)
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v ? v : null)),
+  phone: textoOpcional(30, "El teléfono"),
+  address: textoOpcional(300, "La dirección"),
+  notes: textoOpcional(500, "Las notas"),
   last_restock_date: fechaOpcional,
   next_restock_date: fechaOpcional,
   assigned_vendedor_id: z
     .string()
-    .uuid()
-    .optional()
+    .uuid("Vendedor asignado inválido")
     .nullable()
+    .optional()
     .or(z.literal(""))
     .transform((v) => (v ? v : null)),
   active: z.boolean().default(true),
@@ -145,13 +154,7 @@ export const createSaleSchema = z.object({
   payment_method: z.enum(["efectivo", "transferencia", "credito"]),
   client_uuid: z.string().uuid(),
   sold_at: z.string().datetime({ message: "Fecha/hora inválida" }),
-  notes: z
-    .string()
-    .trim()
-    .max(500)
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v ? v : null)),
+  notes: textoOpcional(500, "Las notas"),
 });
 
 export const entregaSchema = z.object({
@@ -170,16 +173,31 @@ export const gastoSchema = z.object({
 });
 
 export const vendedorInviteSchema = z.object({
-  fullName: z.string().trim().min(2).max(120),
+  fullName: z.string().trim().min(2, "El nombre es muy corto").max(120),
   email: z.string().trim().email("Correo inválido"),
-  phone: z
-    .string()
-    .trim()
-    .max(30)
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v ? v : null)),
+  phone: textoOpcional(30, "El teléfono"),
 });
+
+/**
+ * Primer mensaje de error de un ZodError, listo para mostrar al usuario.
+ *
+ * Cuando falla una unión (`.or(...)`), zod no sabe cuál de las ramas era la
+ * intención y emite su mensaje genérico en inglés, "Invalid input", sin
+ * decir el campo. Eso fue exactamente lo que vio el usuario al guardar un
+ * cliente: un texto que no explica nada y no señala dónde mirar. Si el
+ * mensaje es uno de los nuestros se usa tal cual; si es genérico, al menos
+ * se nombra el campo.
+ */
+export function primerMensajeDeError(error: z.ZodError): string {
+  const issue = error.issues[0];
+  if (!issue) return "Datos inválidos.";
+
+  const esGenerico = !issue.message || /^invalid|^expected|^required/i.test(issue.message);
+  if (!esGenerico) return issue.message;
+
+  const campo = issue.path.join(".");
+  return campo ? `El campo "${campo}" tiene un valor inválido.` : "Datos inválidos.";
+}
 
 export const pushSubscribeSchema = z.object({
   endpoint: z.string().url(),

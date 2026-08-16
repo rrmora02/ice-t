@@ -374,7 +374,7 @@ function ClienteForm({
         <Field label="Nombre" htmlFor="c-name" error={errors.name?.message}>
           <Input id="c-name" placeholder="Abarrotes Lupita" {...register("name")} />
         </Field>
-        <Field label="Tipo">
+        <Field label="Tipo" error={errors.customer_type?.message}>
           <Select {...register("customer_type")}>
             <option value="tienda">Tienda</option>
             <option value="restaurante">Restaurante</option>
@@ -394,7 +394,7 @@ function ClienteForm({
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Field label="Último reabasto" htmlFor="c-last">
+        <Field label="Último reabasto" htmlFor="c-last" error={errors.last_restock_date?.message}>
           <Input id="c-last" type="date" {...register("last_restock_date")} />
         </Field>
         <Field
@@ -406,7 +406,7 @@ function ClienteForm({
           <Input id="c-next" type="date" {...register("next_restock_date")} />
         </Field>
         {role === "admin" && (
-          <Field label="Vendedor asignado">
+          <Field label="Vendedor asignado" error={errors.assigned_vendedor_id?.message}>
             <Select {...register("assigned_vendedor_id")}>
               <option value="">Sin asignar</option>
               {vendedores.map((v) => (
@@ -437,7 +437,7 @@ function ClienteForm({
         ))}
       </div>
 
-      <Field label="Notas" htmlFor="c-notes">
+      <Field label="Notas" htmlFor="c-notes" error={errors.notes?.message}>
         <Textarea id="c-notes" placeholder="Referencias, preferencias, etc." {...register("notes")} />
       </Field>
 

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { safeDbError } from "@/lib/errors";
-import { productoSchema } from "@/lib/validation";
+import { productoSchema, primerMensajeDeError } from "@/lib/validation";
 
 export interface ActionResult {
   ok: boolean;
@@ -15,7 +15,7 @@ export async function crearProducto(input: unknown): Promise<ActionResult> {
   const ctx = await requireAdmin();
   const parsed = productoSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+    return { ok: false, error: primerMensajeDeError(parsed.error) };
   }
 
   const supabase = await createClient();
@@ -33,7 +33,7 @@ export async function actualizarProducto(id: string, input: unknown): Promise<Ac
   await requireAdmin();
   const parsed = productoSchema.partial().safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+    return { ok: false, error: primerMensajeDeError(parsed.error) };
   }
 
   const supabase = await createClient();

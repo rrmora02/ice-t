@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireSession, requireAdmin } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
+import { primerMensajeDeError } from "@/lib/validation";
 import { safeDbError } from "@/lib/errors";
 import { z } from "zod";
 
@@ -25,7 +26,7 @@ const perfilSchema = z.object({
 export async function actualizarPerfil(input: unknown): Promise<ActionResult> {
   const ctx = await requireSession();
   const parsed = perfilSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  if (!parsed.success) return { ok: false, error: primerMensajeDeError(parsed.error) };
 
   const supabase = await createClient();
   const { error } = await supabase
@@ -45,7 +46,7 @@ const negocioSchema = z.object({
 export async function actualizarNegocio(input: unknown): Promise<ActionResult> {
   const ctx = await requireAdmin();
   const parsed = negocioSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  if (!parsed.success) return { ok: false, error: primerMensajeDeError(parsed.error) };
 
   const supabase = await createClient();
   const { error } = await supabase.from("businesses").update({ name: parsed.data.name }).eq("id", ctx.business.id);
