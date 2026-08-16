@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Check, X, Copy, KeyRound, UserX, UserCheck, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
+import { useFeedback } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { vendedorInviteSchema } from "@/lib/validation";
 import { crearVendedor, actualizarEstadoVendedor, resetPasswordVendedor } from "@/app/(app)/vendedores/actions";
@@ -24,36 +25,49 @@ export function VendedoresClient({
 }) {
   const [profiles, setProfiles] = useState(initialProfiles);
   const [showForm, setShowForm] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { success, error: toastError, confirm } = useFeedback();
   const [credentialModal, setCredentialModal] = useState<{ email: string; password: string } | null>(null);
 
-  function handleToggleActive(p: Profile) {
+  async function handleToggleActive(p: Profile) {
     const nextActive = !p.active;
-    if (!nextActive && !confirm(`¿Desactivar a ${p.full_name}? No podrá iniciar sesión ni registrar ventas.`)) return;
-    actualizarEstadoVendedor(p.id, nextActive).then((res) => {
-      if (!res.ok) {
-        setError(res.error ?? "No se pudo actualizar");
-        return;
-      }
-      setProfiles((prev) => prev.map((x) => (x.id === p.id ? { ...x, active: nextActive } : x)));
-    });
+
+    if (!nextActive) {
+      const confirmado = await confirm({
+        title: `¿Desactivar a ${p.full_name}?`,
+        description: "No podrá iniciar sesión ni registrar ventas. Puedes reactivarlo cuando quieras.",
+        confirmLabel: "Desactivar",
+        tone: "danger",
+      });
+      if (!confirmado) return;
+    }
+
+    const res = await actualizarEstadoVendedor(p.id, nextActive);
+    if (!res.ok) {
+      toastError("No se pudo actualizar el vendedor", res.error);
+      return;
+    }
+    setProfiles((prev) => prev.map((x) => (x.id === p.id ? { ...x, active: nextActive } : x)));
+    success(nextActive ? "Vendedor reactivado" : "Vendedor desactivado", p.full_name);
   }
 
-  function handleResetPassword(p: Profile) {
-    if (!confirm(`¿Generar una nueva contraseña temporal para ${p.full_name}?`)) return;
-    resetPasswordVendedor(p.id).then((res) => {
-      if (!res.ok) {
-        setError(res.error ?? "No se pudo restablecer la contraseña");
-        return;
-      }
-      if (res.tempPassword) setCredentialModal({ email: p.email, password: res.tempPassword });
+  async function handleResetPassword(p: Profile) {
+    const confirmado = await confirm({
+      title: `¿Generar una nueva contraseña para ${p.full_name}?`,
+      description: "La contraseña actual dejará de funcionar de inmediato y tendrás que compartirle la nueva.",
+      confirmLabel: "Generar contraseña",
     });
+    if (!confirmado) return;
+
+    const res = await resetPasswordVendedor(p.id);
+    if (!res.ok) {
+      toastError("No se pudo regenerar la contraseña", res.error);
+      return;
+    }
+    if (res.tempPassword) setCredentialModal({ email: p.email, password: res.tempPassword });
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {error && <div className="rounded-xl bg-rose-500/10 p-3 text-sm text-rose-500">{error}</div>}
-
       <div className="flex justify-end">
         <Button onClick={() => setShowForm(true)}>
           <Plus className="h-4 w-4" /> Nuevo vendedor

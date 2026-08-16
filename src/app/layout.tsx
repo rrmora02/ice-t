@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { ServiceWorkerRegistrar } from "@/components/service-worker-registrar";
 import { InstallPrompt } from "@/components/install-prompt";
+import { FeedbackProvider } from "@/components/ui/feedback";
 import "./globals.css";
 
 // Nota: se usa la pila de fuentes del sistema (ver --font-sans en
@@ -42,9 +43,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="es" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        {children}
-        <ServiceWorkerRegistrar />
-        <InstallPrompt />
+        {/* Provider en la raíz para que toasts y confirmaciones estén
+            disponibles en toda la app, incluidas las pantallas de auth. */}
+        <FeedbackProvider>
+          {children}
+          <ServiceWorkerRegistrar />
+          <InstallPrompt />
+        </FeedbackProvider>
       </body>
     </html>
   );

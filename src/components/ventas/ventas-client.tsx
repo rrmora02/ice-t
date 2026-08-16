@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Minus, Plus, ShoppingCart, CheckCircle2, Clock3, User } from "lucide-react";
+import { Minus, Plus, ShoppingCart, Clock3, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Select } from "@/components/ui/input";
+import { useFeedback } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
 import { getOfflineDB } from "@/lib/offline/db";
@@ -53,7 +54,7 @@ export function VentasClient({
   const [customerId, setCustomerId] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
   const [submitting, setSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: "success" | "offline" | "error"; message: string } | null>(null);
+  const { success, error: toastError, warning } = useFeedback();
   const [localSales, setLocalSales] = useState(recentSales);
 
   // Cachea catálogo/clientes en IndexedDB para poder vender sin conexión.
@@ -99,7 +100,6 @@ export function VentasClient({
   async function handleSubmit() {
     if (itemCount === 0) return;
     setSubmitting(true);
-    setFeedback(null);
 
     const clientUuid = crypto.randomUUID();
     const soldAt = new Date().toISOString();
@@ -134,7 +134,7 @@ export function VentasClient({
 
         if (error) throw error;
 
-        setFeedback({ type: "success", message: `Venta registrada por ${formatCurrency(total, currency)}.` });
+        success("Venta registrada", formatCurrency(total, currency));
         setLocalSales((prev) => [
           {
             id: clientUuid,
@@ -169,12 +169,10 @@ export function VentasClient({
         // rechazo del servidor se muestra tal cual: reintentarlo en
         // segundo plano no lo va a resolver.
         if (!isNetworkError(err)) {
-          setFeedback({
-            type: "error",
-            message:
-              (err as { message?: string })?.message ??
-              "No se pudo registrar la venta. Revisa los datos e intenta de nuevo.",
-          });
+          toastError(
+            "No se pudo registrar la venta",
+            (err as { message?: string })?.message ?? "Revisa los datos e intenta de nuevo."
+          );
           setSubmitting(false);
           return;
         }
@@ -196,14 +194,14 @@ export function VentasClient({
         status: "pending",
         attempts: 0,
       });
-      setFeedback({
-        type: "offline",
-        message: "Sin conexión: la venta se guardó en este dispositivo y se enviará automáticamente al reconectar.",
-      });
+      warning(
+        "Venta guardada sin conexión",
+        "Se enviará automáticamente en cuanto vuelva la señal."
+      );
       resetForm();
       syncPendingSales();
     } else {
-      setFeedback({ type: "error", message: "No se pudo registrar la venta. Intenta de nuevo." });
+      toastError("No se pudo registrar la venta", "Intenta de nuevo.");
     }
     setSubmitting(false);
   }
@@ -325,20 +323,6 @@ export function VentasClient({
             <span className="text-2xl font-bold">{formatCurrency(total, currency)}</span>
           </div>
 
-          {feedback && (
-            <div
-              className={
-                feedback.type === "success"
-                  ? "flex items-start gap-2 rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-600 dark:text-emerald-400"
-                  : feedback.type === "offline"
-                    ? "flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-400"
-                    : "flex items-start gap-2 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-500"
-              }
-            >
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{feedback.message}</span>
-            </div>
-          )}
 
           <Button size="lg" className="justify-center" disabled={itemCount === 0} loading={submitting} onClick={handleSubmit}>
             Registrar venta

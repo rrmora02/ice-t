@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Snowflake, Pencil, Trash2, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, NumberInput, Select } from "@/components/ui/input";
+import { useFeedback } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
 import { productoSchema } from "@/lib/validation";
@@ -35,7 +36,7 @@ export function PreciosClient({
   const [products, setProducts] = useState(initialProducts);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { success, error: toastError, confirm } = useFeedback();
   const [pending, startTransition] = useTransition();
 
   const activos = products.filter((p) => p.active);
@@ -46,24 +47,31 @@ export function PreciosClient({
     setShowForm(false);
   }
 
-  function handleDelete(id: string) {
-    if (!confirm("¿Desactivar esta presentación? Ya no aparecerá al registrar ventas.")) return;
+  async function handleDelete(id: string) {
+    const producto = products.find((p) => p.id === id);
+    const confirmado = await confirm({
+      title: "¿Desactivar esta presentación?",
+      description: producto
+        ? `${producto.name} dejará de aparecer al registrar ventas. El historial de ventas anteriores se conserva y puedes reactivarla después.`
+        : undefined,
+      confirmLabel: "Desactivar",
+      tone: "danger",
+    });
+    if (!confirmado) return;
+
     startTransition(async () => {
       const res = await eliminarProducto(id);
       if (!res.ok) {
-        setError(res.error ?? "No se pudo desactivar");
+        toastError("No se pudo desactivar la presentación", res.error);
         return;
       }
       setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, active: false } : p)));
+      success("Presentación desactivada", producto?.name);
     });
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {error && (
-        <div className="rounded-xl bg-rose-500/10 p-3 text-sm text-rose-500">{error}</div>
-      )}
-
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {activos.map((p) =>
           editingId === p.id ? (
@@ -77,6 +85,7 @@ export function PreciosClient({
                 if (!res.ok) return res.error;
                 setProducts((prev) => prev.map((x) => (x.id === p.id ? { ...x, ...values } : x)));
                 setEditingId(null);
+                success("Presentación actualizada", values.name);
               }}
             />
           ) : (
@@ -125,6 +134,7 @@ export function PreciosClient({
                 ...prev,
                 { ...values, id: `tmp-${Date.now()}`, business_id: "", created_at: "", updated_at: "" } as IceProduct,
               ]);
+              success("Presentación creada", values.name);
             }}
           />
         ) : (
@@ -153,7 +163,12 @@ export function PreciosClient({
                   onClick={() =>
                     startTransition(async () => {
                       const res = await actualizarProducto(p.id, { active: true });
-                      if (res.ok) setProducts((prev) => prev.map((x) => (x.id === p.id ? { ...x, active: true } : x)));
+                      if (!res.ok) {
+                        toastError("No se pudo reactivar la presentación", res.error);
+                        return;
+                      }
+                      setProducts((prev) => prev.map((x) => (x.id === p.id ? { ...x, active: true } : x)));
+                      success("Presentación reactivada", p.name);
                     })
                   }
                 >

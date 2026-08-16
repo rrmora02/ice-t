@@ -6,6 +6,7 @@ import { Bell, BellOff, Check, KeyRound, User2, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { useFeedback } from "@/components/ui/feedback";
 import { createClient } from "@/lib/supabase/client";
 import { isPushSupported, getExistingPushSubscription, subscribeToPush, unsubscribeFromPush } from "@/lib/push";
 import { actualizarPerfil, actualizarNegocio } from "@/app/(app)/configuracion/actions";
@@ -44,7 +45,7 @@ function SectionCard({
 
 function PerfilSection({ profile }: { profile: Profile }) {
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { success, error: toastError } = useFeedback();
   const { register, handleSubmit, formState: { isSubmitting } } = useForm({
     defaultValues: { fullName: profile.full_name, phone: profile.phone ?? "" },
   });
@@ -54,17 +55,16 @@ function PerfilSection({ profile }: { profile: Profile }) {
       <form
         className="flex flex-col gap-3"
         onSubmit={handleSubmit(async (values) => {
-          setError(null);
           const res = await actualizarPerfil(values);
           if (!res.ok) {
-            setError(res.error ?? "No se pudo guardar");
+            toastError("No se pudo guardar tu perfil", res.error);
             return;
           }
           setSaved(true);
           setTimeout(() => setSaved(false), 1500);
+          success("Perfil actualizado");
         })}
       >
-        {error && <p className="text-xs font-medium text-rose-500">{error}</p>}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Nombre completo">
             <Input {...register("fullName")} />
@@ -94,7 +94,7 @@ function NotificacionesSection() {
   const supported = useIsPushSupported();
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { success, error: toastError } = useFeedback();
 
   useEffect(() => {
     getExistingPushSubscription().then((sub) => setSubscribed(!!sub));
@@ -102,16 +102,17 @@ function NotificacionesSection() {
 
   async function handleToggle() {
     setLoading(true);
-    setError(null);
     if (subscribed) {
       await unsubscribeFromPush();
       setSubscribed(false);
+      success("Notificaciones desactivadas");
     } else {
       const res = await subscribeToPush();
       if (!res.ok) {
-        setError(res.error ?? "No se pudo activar");
+        toastError("No se pudieron activar las notificaciones", res.error);
       } else {
         setSubscribed(true);
+        success("Notificaciones activadas", "Te avisaremos cuando un cliente esté por necesitar reabasto.");
       }
     }
     setLoading(false);
@@ -126,8 +127,7 @@ function NotificacionesSection() {
         <Badge tone="neutral">No disponible en este navegador</Badge>
       ) : (
         <>
-          {error && <p className="text-xs font-medium text-rose-500">{error}</p>}
-          <Button
+            <Button
             size="sm"
             variant={subscribed ? "outline" : "primary"}
             className="w-fit"
@@ -145,7 +145,7 @@ function NotificacionesSection() {
 
 function SeguridadSection() {
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { success, error: toastError } = useFeedback();
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<{ password: string; confirm: string }>();
 
   return (
@@ -153,27 +153,26 @@ function SeguridadSection() {
       <form
         className="flex flex-col gap-3"
         onSubmit={handleSubmit(async (values) => {
-          setError(null);
           if (values.password.length < 8) {
-            setError("La contraseña debe tener al menos 8 caracteres.");
+            toastError("La contraseña debe tener al menos 8 caracteres.");
             return;
           }
           if (values.password !== values.confirm) {
-            setError("Las contraseñas no coinciden.");
+            toastError("Las contraseñas no coinciden.");
             return;
           }
           const supabase = createClient();
           const { error: updateError } = await supabase.auth.updateUser({ password: values.password });
           if (updateError) {
-            setError(updateError.message);
+            toastError("No se pudo cambiar la contraseña", updateError.message);
             return;
           }
           reset();
           setSaved(true);
           setTimeout(() => setSaved(false), 1500);
+          success("Contraseña actualizada", "Úsala la próxima vez que inicies sesión.");
         })}
       >
-        {error && <p className="text-xs font-medium text-rose-500">{error}</p>}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Nueva contraseña">
             <Input type="password" autoComplete="new-password" {...register("password")} />
@@ -192,7 +191,7 @@ function SeguridadSection() {
 
 function NegocioSection({ business }: { business: Business }) {
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { success, error: toastError } = useFeedback();
   const { register, handleSubmit, formState: { isSubmitting } } = useForm({ defaultValues: { name: business.name } });
 
   return (
@@ -200,17 +199,16 @@ function NegocioSection({ business }: { business: Business }) {
       <form
         className="flex flex-col gap-3"
         onSubmit={handleSubmit(async (values) => {
-          setError(null);
           const res = await actualizarNegocio(values);
           if (!res.ok) {
-            setError(res.error ?? "No se pudo guardar");
+            toastError("No se pudo guardar el negocio", res.error);
             return;
           }
           setSaved(true);
           setTimeout(() => setSaved(false), 1500);
+          success("Negocio actualizado", values.name);
         })}
       >
-        {error && <p className="text-xs font-medium text-rose-500">{error}</p>}
         <Field label="Nombre del negocio">
           <Input {...register("name")} />
         </Field>

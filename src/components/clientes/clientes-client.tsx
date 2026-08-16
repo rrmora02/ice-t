@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/input";
+import { useFeedback } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { formatDate, todayLocalISODate } from "@/lib/format";
 import { clienteSchema } from "@/lib/validation";
@@ -77,7 +78,7 @@ export function ClientesClient({
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [entregaFor, setEntregaFor] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { success, error: toastError, confirm } = useFeedback();
   const [, startTransition] = useTransition();
 
   const filtered = useMemo(() => {
@@ -91,15 +92,26 @@ export function ClientesClient({
     );
   }, [customers, query]);
 
-  function handleDelete(id: string) {
-    if (!confirm("¿Eliminar este cliente?")) return;
+  async function handleDelete(id: string) {
+    const cliente = customers.find((c) => c.id === id);
+    const confirmado = await confirm({
+      title: "¿Eliminar este cliente?",
+      description: cliente
+        ? `${cliente.name} dejará de aparecer en la lista y al registrar ventas. Su historial de ventas se conserva.`
+        : undefined,
+      confirmLabel: "Eliminar",
+      tone: "danger",
+    });
+    if (!confirmado) return;
+
     startTransition(async () => {
       const res = await desactivarCliente(id);
       if (!res.ok) {
-        setError(res.error ?? "No se pudo eliminar");
+        toastError("No se pudo eliminar el cliente", res.error);
         return;
       }
       setCustomers((prev) => prev.filter((c) => c.id !== id));
+      success("Cliente eliminado", cliente?.name);
     });
   }
 
@@ -108,20 +120,22 @@ export function ClientesClient({
       const hoy = todayLocalISODate();
       const res = await registrarEntrega(id, hoy, nextRestockDate);
       if (!res.ok) {
-        setError(res.error ?? "No se pudo registrar la entrega");
+        toastError("No se pudo registrar la entrega", res.error);
         return;
       }
       setCustomers((prev) =>
         prev.map((c) => (c.id === id ? { ...c, last_restock_date: hoy, next_restock_date: nextRestockDate } : c))
       );
       setEntregaFor(null);
+      success(
+        "Entrega registrada",
+        nextRestockDate ? `Se recordará el reabasto el ${formatDate(nextRestockDate)}.` : "Sin recordatorio de reabasto."
+      );
     });
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {error && <div className="rounded-xl bg-rose-500/10 p-3 text-sm text-rose-500">{error}</div>}
-
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--foreground-muted)]" />
@@ -153,6 +167,7 @@ export function ClientesClient({
               const res = await actualizarCliente(editing.id, values);
               if (!res.ok) return res.error;
               setCustomers((prev) => prev.map((c) => (c.id === editing.id ? { ...c, ...values } : c)));
+              success("Cliente actualizado", values.name);
             } else {
               const res = await crearCliente(values);
               if (!res.ok) return res.error;
@@ -160,6 +175,7 @@ export function ClientesClient({
                 { ...values, id: `tmp-${Date.now()}`, business_id: "", created_at: "", updated_at: "" } as Customer,
                 ...prev,
               ]);
+              success("Cliente guardado", values.name);
             }
             setShowForm(false);
             setEditing(null);

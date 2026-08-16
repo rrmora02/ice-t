@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2, X, Check, TrendingUp, PiggyBank, Wallet, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, NumberInput, Select } from "@/components/ui/input";
+import { useFeedback } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, todayLocalISODate } from "@/lib/format";
 import { gastoSchema } from "@/lib/validation";
@@ -36,7 +37,7 @@ export function GastosClient({
   const [expenses, setExpenses] = useState(initialExpenses);
   const [showForm, setShowForm] = useState(false);
   const [filter, setFilter] = useState<"todos" | ExpenseType>("todos");
-  const [error, setError] = useState<string | null>(null);
+  const { success, error: toastError, confirm } = useFeedback();
 
   const filtered = useMemo(
     () => (filter === "todos" ? expenses : expenses.filter((e) => e.expense_type === filter)),
@@ -47,21 +48,29 @@ export function GastosClient({
   const netProfit = roi?.net_profit ?? 0;
   const progress = capital > 0 ? Math.min(100, Math.max(0, (netProfit / capital) * 100)) : 0;
 
-  function handleDelete(id: string) {
-    if (!confirm("¿Eliminar este gasto?")) return;
-    eliminarGasto(id).then((res) => {
-      if (!res.ok) {
-        setError(res.error ?? "No se pudo eliminar");
-        return;
-      }
-      setExpenses((prev) => prev.filter((e) => e.id !== id));
+  async function handleDelete(id: string) {
+    const gasto = expenses.find((e) => e.id === id);
+    const confirmado = await confirm({
+      title: "¿Eliminar este gasto?",
+      description: gasto
+        ? `Se borrará "${gasto.description}" por ${formatCurrency(gasto.amount, currency)}. Esto cambia el cálculo de recuperación de la inversión.`
+        : undefined,
+      confirmLabel: "Eliminar",
+      tone: "danger",
     });
+    if (!confirmado) return;
+
+    const res = await eliminarGasto(id);
+    if (!res.ok) {
+      toastError("No se pudo eliminar el gasto", res.error);
+      return;
+    }
+    setExpenses((prev) => prev.filter((e) => e.id !== id));
+    success("Gasto eliminado", gasto?.description);
   }
 
   return (
     <div className="flex flex-col gap-5">
-      {error && <div className="rounded-xl bg-rose-500/10 p-3 text-sm text-rose-500">{error}</div>}
-
       {/* Resumen de inversión / ROI */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
@@ -134,6 +143,7 @@ export function GastosClient({
           onCreated={(gasto) => {
             setExpenses((prev) => [gasto, ...prev]);
             setShowForm(false);
+            success("Gasto registrado", `${gasto.description} · ${formatCurrency(gasto.amount, currency)}`);
           }}
         />
       )}
