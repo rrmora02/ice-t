@@ -17,7 +17,7 @@ import {
   CalendarPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { formatDate, todayLocalISODate } from "@/lib/format";
 import { clienteSchema } from "@/lib/validation";
@@ -36,6 +36,9 @@ const TYPE_LABEL: Record<Customer["customer_type"], string> = {
 };
 
 const QUICK_DAYS = [1, 3, 5, 7, 15, 30];
+
+/** Tope del recordatorio manual de reabasto: un año. */
+const MAX_RESTOCK_DAYS = 365;
 
 function urgencyTone(daysUntil: number | null): { tone: "danger" | "warning" | "success" | "neutral"; label: string } {
   if (daysUntil === null) return { tone: "neutral", label: "Sin recordatorio" };
@@ -247,7 +250,13 @@ function EntregaPrompt({
 }) {
   const [days, setDays] = useState<string>("");
   const today = todayLocalISODate();
-  const previewDate = days ? addDays(today, Number(days)) : null;
+
+  // Se acota a un año: sin tope, un dedazo ("300" en vez de "3", o pegar un
+  // número largo) generaba una fecha de recordatorio absurda que además se
+  // guardaba sin más aviso.
+  const parsedDays = Number(days);
+  const validDays = days !== "" && Number.isInteger(parsedDays) && parsedDays >= 1 && parsedDays <= MAX_RESTOCK_DAYS;
+  const previewDate = validDays ? addDays(today, parsedDays) : null;
 
   return (
     <div className="rounded-xl border border-dashed border-[var(--border)] p-3">
@@ -265,26 +274,35 @@ function EntregaPrompt({
             {d}d
           </button>
         ))}
-        <Input
-          type="number"
-          min="1"
+        <NumberInput
+          decimales={false}
+          min={1}
+          max={MAX_RESTOCK_DAYS}
           placeholder="Otro #"
+          aria-label="Otro número de días"
           value={days}
           onChange={(e) => setDays(e.target.value)}
           className="h-9 w-24"
         />
       </div>
+      {days !== "" && !validDays && (
+        <p className="mt-2 text-xs font-medium text-rose-500">
+          Escribe un número entero de días entre 1 y {MAX_RESTOCK_DAYS}.
+        </p>
+      )}
       {previewDate && (
         <p className="mt-2 flex items-center gap-1.5 text-xs text-[var(--foreground-muted)]">
           <CalendarPlus className="h-3.5 w-3.5" /> Se le recordará el {formatDate(previewDate)}
         </p>
       )}
-      <div className="mt-3 flex gap-2">
+      {/* Tres botones en fila se salían de la pantalla en un teléfono
+          angosto; con flex-wrap bajan a la siguiente línea. */}
+      <div className="mt-3 flex flex-wrap gap-2">
         <Button
           size="sm"
           className="flex-1 sm:flex-none"
           onClick={() => onConfirm(previewDate)}
-          disabled={!days}
+          disabled={!validDays}
         >
           <Check className="h-3.5 w-3.5" /> Guardar entrega
         </Button>

@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2, X, Check, TrendingUp, PiggyBank, Wallet, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input, NumberInput, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, todayLocalISODate } from "@/lib/format";
 import { gastoSchema } from "@/lib/validation";
@@ -227,8 +227,15 @@ function GastoForm({
     },
   });
 
-  const unitCost = Number(watch("unit_cost") || 0);
-  const quantity = Number(watch("quantity") || 0);
+  // `watch` devuelve lo que hay escrito en el campo (una cadena), no el
+  // valor ya parseado por zod, así que la vista previa del total normaliza
+  // la coma decimal y trata lo no numérico como 0 en vez de mostrar NaN.
+  const aNumero = (v: unknown) => {
+    const n = Number(String(v ?? "").trim().replace(",", "."));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  const unitCost = aNumero(watch("unit_cost"));
+  const quantity = aNumero(watch("quantity"));
 
   return (
     <form
@@ -247,7 +254,9 @@ function GastoForm({
           business_id: "",
           created_by: null,
           created_at: "",
-          amount: unitCost * quantity,
+          // A partir de los valores ya validados por zod, no de la vista
+          // previa: es lo mismo que acaba de guardar el servidor.
+          amount: Number((values.unit_cost * values.quantity).toFixed(2)),
         } as Expense);
       })}
       className="card flex flex-col gap-3 p-4"
@@ -258,7 +267,9 @@ function GastoForm({
         <Input id="g-desc" placeholder="Máquina de hielo, bolsas, gasolina…" {...register("description")} />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      {/* Los textos de estas opciones son largos ("Operativo (recurrente)"),
+          así que en móvil van apilados: a media pantalla se cortaban. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Tipo">
           <Select {...register("expense_type")}>
             <option value="operativo">Operativo (recurrente)</option>
@@ -276,14 +287,22 @@ function GastoForm({
         </Field>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      {/* En un teléfono de 360px, tres columnas dejaban ~100px por campo y
+          el selector de fecha nativo no cabía. Costo y cantidad caben de a
+          dos; la fecha ocupa el ancho completo hasta sm. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Field label="Costo unitario" htmlFor="g-cost" error={errors.unit_cost?.message}>
-          <Input id="g-cost" type="number" step="0.01" min="0" {...register("unit_cost")} />
+          <NumberInput id="g-cost" placeholder="0.00" {...register("unit_cost")} />
         </Field>
         <Field label="Cantidad" htmlFor="g-qty" error={errors.quantity?.message}>
-          <Input id="g-qty" type="number" step="1" min="0.01" {...register("quantity")} />
+          <NumberInput id="g-qty" placeholder="1" {...register("quantity")} />
         </Field>
-        <Field label="Fecha" htmlFor="g-date">
+        <Field
+          label="Fecha"
+          htmlFor="g-date"
+          error={errors.expense_date?.message}
+          className="col-span-2 sm:col-span-1"
+        >
           <Input id="g-date" type="date" {...register("expense_date")} />
         </Field>
       </div>

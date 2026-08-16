@@ -5,6 +5,52 @@ import { z } from "zod";
 // validación del formulario en el cliente.
 
 /**
+ * Campo numérico de formulario.
+ *
+ * `z.coerce.number()` a secas no sirve aquí: convierte `""` en `0`, así que
+ * un campo vacío se guardaba como cero en silencio (un gasto sin costo, una
+ * cantidad sin capturar) en vez de avisar. Este helper distingue los tres
+ * casos —vacío, no numérico y fuera de rango— y devuelve mensajes en
+ * español; los de zod por defecto salen en inglés y hablan de "Number".
+ *
+ * También acepta coma decimal (12,5), habitual al teclear en móvil.
+ *
+ * Los mensajes están redactados para servir con cualquier género: se dice
+ * "no puede ser un número negativo" y no "no puede ser negativo/a".
+ */
+function campoNumerico(
+  etiqueta: string,
+  { max, minimo = "cero" }: { max: number; minimo?: "cero" | "mayor-a-cero" }
+) {
+  return z.preprocess(
+    (v) => {
+      if (typeof v === "number") return v;
+      if (typeof v === "string") {
+        const limpio = v.trim().replace(",", ".");
+        if (limpio === "") return undefined;
+        const n = Number(limpio);
+        return Number.isFinite(n) ? n : NaN;
+      }
+      return v;
+    },
+    z
+      .number({
+        error: (issue) =>
+          issue.input === undefined
+            ? `Falta ${etiqueta.toLowerCase()}.`
+            : `${etiqueta} debe ser un número.`,
+      })
+      .refine(
+        (v) => (minimo === "cero" ? v >= 0 : v > 0),
+        minimo === "cero"
+          ? `${etiqueta} no puede ser un número negativo.`
+          : `${etiqueta} debe ser mayor a cero.`
+      )
+      .refine((v) => v <= max, `${etiqueta} no puede pasar de ${max.toLocaleString("es-MX")}.`)
+  );
+}
+
+/**
  * Fecha en formato ISO corto (YYYY-MM-DD), tal como la entrega un
  * `<input type="date">`. Antes estos campos eran `z.string()` a secas, así
  * que cualquier cadena llegaba hasta Postgres y el error de parseo (con el
@@ -42,7 +88,7 @@ export const productoSchema = z.object({
   name: z.string().trim().min(2).max(80),
   unit: z.enum(["pieza", "kg"]),
   is_bulk: z.boolean(),
-  price: z.coerce.number().min(0, "El precio no puede ser negativo").max(1_000_000),
+  price: campoNumerico("El precio", { max: 1_000_000 }),
   sort_order: z.coerce.number().int().min(0).max(9999).default(0),
   active: z.boolean().default(true),
 });
@@ -86,8 +132,11 @@ export const clienteSchema = z.object({
 export const saleItemSchema = z.object({
   product_id: z.string().uuid(),
   product_name: z.string().min(1),
-  unit_price: z.number().min(0),
-  quantity: z.number().gt(0).max(100_000),
+  // El servidor ignora este precio y usa el de ice_products (ver
+  // create_sale en 0004_security_hardening.sql); se valida igual para no
+  // aceptar payloads con basura.
+  unit_price: campoNumerico("El precio", { max: 1_000_000 }),
+  quantity: campoNumerico("La cantidad", { max: 100_000, minimo: "mayor-a-cero" }),
 });
 
 export const createSaleSchema = z.object({
@@ -115,8 +164,8 @@ export const gastoSchema = z.object({
   expense_type: z.enum(["capital", "operativo"]),
   category: z.enum(["equipo", "insumo", "transporte", "servicios", "otro"]),
   description: z.string().trim().min(2, "Describe el gasto").max(200),
-  unit_cost: z.coerce.number().min(0).max(10_000_000),
-  quantity: z.coerce.number().gt(0).max(1_000_000),
+  unit_cost: campoNumerico("El costo unitario", { max: 10_000_000 }),
+  quantity: campoNumerico("La cantidad", { max: 1_000_000, minimo: "mayor-a-cero" }),
   expense_date: fechaISO,
 });
 

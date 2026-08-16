@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Snowflake, Pencil, Trash2, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input, NumberInput, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
 import { productoSchema } from "@/lib/validation";
@@ -210,9 +210,9 @@ function ProductoForm({
         <Input id="name" placeholder="Bolsa 1 kg" {...register("name")} />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Precio" htmlFor="price" error={errors.price?.message}>
-          <Input id="price" type="number" step="0.01" min="0" {...register("price")} />
+          <NumberInput id="price" placeholder="0.00" {...register("price")} />
         </Field>
         <Field label="Unidad">
           <Select {...register("unit")}>
