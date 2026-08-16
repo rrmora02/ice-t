@@ -18,6 +18,7 @@ import {
   Snowflake,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { clearLocalBusinessData } from "@/lib/offline/clear-local-data";
 import { OfflineIndicator } from "@/components/offline-indicator";
 import type { Role } from "@/types/db";
 
@@ -62,6 +63,9 @@ export function AppShell({
   async function handleLogout() {
     const supabase = createClient();
     await supabase.auth.signOut();
+    // Deja el dispositivo limpio: la caché de páginas y el catálogo local
+    // son por origen, no por usuario (ver clearLocalBusinessData).
+    await clearLocalBusinessData();
     router.replace("/login");
     router.refresh();
   }

@@ -5,7 +5,7 @@
 //
 // Sube este número de versión cada vez que cambies este archivo para que
 // los navegadores de los usuarios descarten el caché anterior.
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const CACHE_NAME = `ice-t-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
@@ -44,6 +44,13 @@ function isStaticAsset(url) {
   );
 }
 
+// Sólo se guardan respuestas propias y correctas. Antes se cacheaba
+// cualquier cosa: un 500 momentáneo o el redirect a /login quedaban
+// guardados y se seguían sirviendo offline como si fueran la página.
+function isCacheable(response) {
+  return response && response.ok && response.type === "basic" && !response.redirected;
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -53,12 +60,21 @@ self.addEventListener("fetch", (event) => {
 
   // Navegación (carga de página completa / refresh): network-first, con
   // caché de respaldo y offline.html como último recurso.
+  //
+  // NOTA: estas páginas se renderizan en el servidor CON los datos del
+  // usuario que inició sesión. La Cache Storage es por origen, no por
+  // usuario, así que en un teléfono compartido entre vendedores el
+  // siguiente en entrar podría ver, sin conexión, la página cacheada del
+  // anterior. Por eso la app manda CLEAR_CACHES al cerrar sesión (ver el
+  // listener de 'message' más abajo).
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          if (isCacheable(response)) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
           return response;
         })
         .catch(async () => {
@@ -76,8 +92,10 @@ self.addEventListener("fetch", (event) => {
         (cached) =>
           cached ||
           fetch(request).then((response) => {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+            if (isCacheable(response)) {
+              const copy = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+            }
             return response;
           })
       )
@@ -86,6 +104,29 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Todo lo demás (API routes, RSC payloads, etc.) va directo a la red.
+});
+
+// La app envía este mensaje al cerrar sesión para que no queden páginas
+// renderizadas con los datos del usuario anterior (teléfonos compartidos
+// entre vendedores). Ver handleLogout en src/components/app-shell.tsx.
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "CLEAR_CACHES") return;
+
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .then(() => {
+        // Vuelve a dejar disponible lo mínimo para que la app arranque
+        // offline en el siguiente inicio de sesión.
+        return caches
+          .open(CACHE_NAME)
+          .then((cache) => Promise.all(PRECACHE_URLS.map((u) => cache.add(u).catch(() => undefined))));
+      })
+      .then(() => {
+        event.source?.postMessage({ type: "CACHES_CLEARED" });
+      })
+  );
 });
 
 // Notificaciones push (recordatorios de reabasto). Ver

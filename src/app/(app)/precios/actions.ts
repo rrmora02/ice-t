@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
+import { safeDbError } from "@/lib/errors";
 import { productoSchema } from "@/lib/validation";
 
 export interface ActionResult {
@@ -23,7 +24,7 @@ export async function crearProducto(input: unknown): Promise<ActionResult> {
     business_id: ctx.business.id,
   });
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/precios");
   return { ok: true };
 }
@@ -38,7 +39,7 @@ export async function actualizarProducto(id: string, input: unknown): Promise<Ac
   const supabase = await createClient();
   const { error } = await supabase.from("ice_products").update(parsed.data).eq("id", id);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/precios");
   return { ok: true };
 }
@@ -50,7 +51,7 @@ export async function eliminarProducto(id: string): Promise<ActionResult> {
   // conservar el historial en vez de borrar filas.
   const { error } = await supabase.from("ice_products").update({ active: false }).eq("id", id);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/precios");
   return { ok: true };
 }

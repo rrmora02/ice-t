@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
-import { clienteSchema } from "@/lib/validation";
+import { clienteSchema, entregaSchema } from "@/lib/validation";
+import { safeDbError } from "@/lib/errors";
 
 export interface ActionResult {
   ok: boolean;
@@ -23,38 +24,55 @@ export async function crearCliente(input: unknown): Promise<ActionResult> {
     business_id: ctx.business.id,
   });
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/clientes");
   revalidatePath("/dashboard");
   return { ok: true };
 }
 
 export async function actualizarCliente(id: string, input: unknown): Promise<ActionResult> {
-  await requireSession();
+  const ctx = await requireSession();
   const parsed = clienteSchema.partial().safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.from("customers").update(parsed.data).eq("id", id);
+  // El `.eq("business_id")` es redundante con RLS a propósito: si algún
+  // día una política se relaja por error, la acción sigue sin poder tocar
+  // filas de otro negocio.
+  const { error } = await supabase
+    .from("customers")
+    .update(parsed.data)
+    .eq("id", id)
+    .eq("business_id", ctx.business.id);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/clientes");
   revalidatePath("/dashboard");
   return { ok: true };
 }
 
-export async function eliminarCliente(id: string): Promise<ActionResult> {
+/**
+ * Baja lógica: se conserva la fila para no romper el histórico de ventas
+ * que apunta a este cliente (el nombre sigue apareciendo en los reportes).
+ */
+export async function desactivarCliente(id: string): Promise<ActionResult> {
   const ctx = await requireSession();
   if (ctx.profile.role !== "admin") {
     return { ok: false, error: "Sólo un administrador puede eliminar clientes." };
   }
-  const supabase = await createClient();
-  const { error } = await supabase.from("customers").update({ active: false }).eq("id", id);
 
-  if (error) return { ok: false, error: error.message };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("customers")
+    .update({ active: false })
+    .eq("id", id)
+    .eq("business_id", ctx.business.id);
+
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/clientes");
+  revalidatePath("/dashboard");
   return { ok: true };
 }
 
@@ -70,14 +88,24 @@ export async function registrarEntrega(
   deliveryDate: string,
   nextRestockDate: string | null
 ): Promise<ActionResult> {
-  await requireSession();
+  const ctx = await requireSession();
+
+  const parsed = entregaSchema.safeParse({ customerId, deliveryDate, nextRestockDate });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  }
+
   const supabase = await createClient();
   const { error } = await supabase
     .from("customers")
-    .update({ last_restock_date: deliveryDate, next_restock_date: nextRestockDate })
-    .eq("id", customerId);
+    .update({
+      last_restock_date: parsed.data.deliveryDate,
+      next_restock_date: parsed.data.nextRestockDate,
+    })
+    .eq("id", parsed.data.customerId)
+    .eq("business_id", ctx.business.id);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/clientes");
   revalidatePath("/dashboard");
   return { ok: true };

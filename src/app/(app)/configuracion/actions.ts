@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireSession, requireAdmin } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
+import { safeDbError } from "@/lib/errors";
 import { z } from "zod";
 
 export interface ActionResult {
@@ -32,7 +33,7 @@ export async function actualizarPerfil(input: unknown): Promise<ActionResult> {
     .update({ full_name: parsed.data.fullName, phone: parsed.data.phone })
     .eq("id", ctx.userId);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/configuracion");
   return { ok: true };
 }
@@ -49,7 +50,7 @@ export async function actualizarNegocio(input: unknown): Promise<ActionResult> {
   const supabase = await createClient();
   const { error } = await supabase.from("businesses").update({ name: parsed.data.name }).eq("id", ctx.business.id);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/configuracion");
   return { ok: true };
 }

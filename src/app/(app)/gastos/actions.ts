@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
+import { safeDbError } from "@/lib/errors";
 import { gastoSchema } from "@/lib/validation";
 
 export interface ActionResult {
@@ -24,7 +25,7 @@ export async function crearGasto(input: unknown): Promise<ActionResult> {
     created_by: ctx.profile.id,
   });
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/gastos");
   revalidatePath("/dashboard");
   return { ok: true };
@@ -35,7 +36,7 @@ export async function eliminarGasto(id: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { error } = await supabase.from("expenses").delete().eq("id", id);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/gastos");
   revalidatePath("/dashboard");
   return { ok: true };

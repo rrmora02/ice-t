@@ -18,6 +18,13 @@ Push (VAPID).
 2. Ve a **SQL Editor** y ejecuta, en orden, el contenido de:
    - `supabase/migrations/0001_init.sql`
    - `supabase/migrations/0002_views.sql`
+   - `supabase/migrations/0003_manual_restock_reminders.sql`
+   - `supabase/migrations/0004_security_hardening.sql`
+
+   El 0004 es **obligatorio**: es el que hace que el precio de una venta lo
+   ponga el servidor y no el navegador, acota la fecha de la venta, cierra
+   los permisos de las funciones y corrige el corte diario para que use la
+   zona horaria del negocio en vez de UTC.
 3. En **Authentication → Providers**, confirma que "Email" esté habilitado.
    Puedes desactivar "Confirm email" mientras pruebas (así el registro crea
    sesión inmediata); en producción se recomienda dejarlo activo — el flujo
@@ -59,7 +66,14 @@ y 5 kg, y hielo a granel — edítalos en **Precios**).
   una contraseña temporal que debe compartirse de forma segura; el vendedor
   puede cambiarla en **Configuración → Seguridad**). Puede registrar ventas
   (incluso sin conexión), gestionar clientes y ver su propio dashboard de
-  ventas. No ve precios, gastos ni la sección de vendedores.
+  ventas. No ve **la administración de** precios, ni gastos, ni la sección
+  de vendedores.
+
+  Precisión sobre los precios: el vendedor sí ve el precio de cada
+  presentación —lo necesita para cobrar, y la pantalla de Ventas se lo
+  muestra— lo que no puede es editarlo. La política RLS `ice_products_select`
+  permite leer el catálogo a todo el negocio y `ice_products_admin_write`
+  reserva la escritura al admin.
 
 ## 5. Notificaciones push (recordatorios de reabasto)
 
@@ -84,6 +98,10 @@ y 5 kg, y hielo a granel — edítalos en **Precios**).
      VAPID_SUBJECT="mailto:tucorreo@tudominio.com" \
      CRON_SECRET=$(openssl rand -hex 24)
    ```
+   `CRON_SECRET` es **obligatorio**: si no está configurado, la función
+   responde 500 y no envía nada. Antes se saltaba la comprobación cuando
+   faltaba la variable, lo que dejaba la función abierta a cualquiera que
+   conociera su URL.
    (`SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` ya los inyecta Supabase
    automáticamente en toda Edge Function.)
 5. Prográmala para que corra periódicamente (ej. cada hora) con `pg_cron` +
@@ -134,6 +152,30 @@ guarda la última versión visitada de cada página.
   en el servidor que cliente y productos pertenezcan al negocio del
   vendedor autenticado (nunca confía en `business_id` enviado por el
   cliente).
+- **El precio de venta lo pone el servidor.** `create_sale` ignora el
+  `unit_price` que manda el navegador y lee el precio vigente de
+  `ice_products`. Consecuencia a tener presente: una venta guardada offline
+  que se sincroniza después de un cambio de precio queda registrada con el
+  precio del momento de la sincronización.
+- `create_sale` también acota `sold_at`: una fecha futura se recorta a
+  `now()` (reloj del teléfono adelantado) y una anterior a 30 días se
+  rechaza, para que nadie reescriba históricos ya revisados.
+- Las operaciones que usan la `service_role` key comprueban antes, contra
+  `profiles`, que el usuario objetivo sea del mismo negocio. Esa llave
+  ignora RLS, así que un `id` que llega del navegador jamás se le pasa sin
+  validar.
+- Las contraseñas temporales de vendedores se generan con el CSPRNG del
+  sistema (`node:crypto`), no con `Math.random()`.
+- Los mensajes de error de la base no se devuelven crudos al navegador
+  (ver `src/lib/errors.ts`): filtraban nombres de tablas, columnas y
+  constraints. El detalle completo queda en los logs del servidor.
+- Cabeceras de seguridad (CSP, HSTS, `X-Frame-Options`, `Referrer-Policy`,
+  `Permissions-Policy`) se aplican a todas las rutas desde
+  `next.config.ts`.
+- Al cerrar sesión se limpian la caché de páginas del Service Worker y el
+  catálogo/clientes guardados en IndexedDB: ambos son por origen, no por
+  usuario, y estos teléfonos se comparten entre vendedores. La cola de
+  ventas pendientes **no** se borra (son ventas reales sin sincronizar).
 - La `service_role` key sólo se usa en `src/lib/supabase/admin.ts`
   (protegido con `import "server-only"`) y únicamente para crear cuentas de
   vendedores desde una Server Action que ya validó que quien llama es admin.
@@ -142,6 +184,12 @@ guarda la última versión visitada de cada página.
 - Un trigger de base de datos impide que un vendedor se autopromueva a
   admin editando su propio perfil (ver `protect_profile_privileged_columns`
   en la migración).
+- **Pendiente de configurar en el panel de Supabase** (no se puede hacer
+  desde el código): activa **Authentication → Providers → Email → Secure
+  password change**. Sin eso, `Configuración → Seguridad` permite cambiar
+  la contraseña con sólo tener la sesión abierta, sin pedir la contraseña
+  actual — basta un teléfono desbloqueado y prestado para quedarse con la
+  cuenta.
 - **Rate limiting**: Supabase Auth ya limita intentos de login repetidos.
   Para limitar abuso de las Server Actions en producción (ej. muchas
   ventas/gastos por segundo desde una sola cuenta comprometida), se

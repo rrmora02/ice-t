@@ -40,6 +40,13 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
   let failed = 0;
 
   try {
+    // Rescata ventas que quedaron marcadas como "syncing": si la pestaña
+    // se cerró (o el navegador mató la app) a media petición, la fila se
+    // quedaba en ese estado y NUNCA se volvía a intentar, porque la
+    // consulta de abajo sólo mira "pending" y "error". Eran ventas reales
+    // perdidas en silencio.
+    await db.pendingSales.where("status").equals("syncing").modify({ status: "pending" });
+
     const pending: PendingSale[] = await db.pendingSales
       .where("status")
       .anyOf(["pending", "error"])

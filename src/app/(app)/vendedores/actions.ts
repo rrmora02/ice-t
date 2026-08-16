@@ -1,10 +1,13 @@
 "use server";
 
+import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { vendedorInviteSchema } from "@/lib/validation";
+import { safeDbError } from "@/lib/errors";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface ActionResult {
   ok: boolean;
@@ -12,13 +15,45 @@ export interface ActionResult {
   tempPassword?: string;
 }
 
-function generateTempPassword() {
-  // Password temporal legible (el vendedor debe cambiarla en su primer
-  // inicio de sesión, ver /configuracion).
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+const PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+
+/**
+ * Password temporal legible (el vendedor debe cambiarla desde
+ * /configuracion). Usa el CSPRNG del sistema: `Math.random()` no es
+ * criptográficamente seguro — su estado interno se puede reconstruir a
+ * partir de unas pocas salidas, así que quien viera un par de contraseñas
+ * temporales podría predecir las siguientes.
+ */
+function generateTempPassword(length = 14) {
   let out = "";
-  for (let i = 0; i < 10; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < length; i++) {
+    out += PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)];
+  }
   return out;
+}
+
+/**
+ * Confirma que `targetId` es un perfil del MISMO negocio que el admin que
+ * llama. Imprescindible antes de cualquier operación con la service role
+ * key, que ignora RLS por completo: sin esta comprobación, el id llega
+ * desde el navegador y un admin podría operar sobre usuarios de otros
+ * negocios.
+ */
+async function assertMiembroDelNegocio(
+  supabase: SupabaseClient,
+  businessId: string,
+  targetId: string
+): Promise<{ ok: true; role: string } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, role, business_id")
+    .eq("id", targetId)
+    .eq("business_id", businessId)
+    .maybeSingle();
+
+  if (error) return { ok: false, error: safeDbError(error) };
+  if (!data) return { ok: false, error: "Ese usuario no pertenece a tu negocio." };
+  return { ok: true, role: data.role as string };
 }
 
 /**
@@ -45,7 +80,11 @@ export async function crearVendedor(input: unknown): Promise<ActionResult> {
   });
 
   if (createError || !created.user) {
-    return { ok: false, error: createError?.message ?? "No se pudo crear la cuenta" };
+    // No se refleja el mensaje de Supabase tal cual: distingue entre
+    // "correo ya registrado" y otros fallos, lo que permitiría sondear
+    // qué correos existen en la plataforma.
+    console.error("[crearVendedor] createUser", createError);
+    return { ok: false, error: "No se pudo crear la cuenta. Verifica el correo e intenta de nuevo." };
   }
 
   const { error: profileError } = await admin.from("profiles").insert({
@@ -60,7 +99,7 @@ export async function crearVendedor(input: unknown): Promise<ActionResult> {
   if (profileError) {
     // Revertimos la cuenta huérfana en auth para no dejar basura.
     await admin.auth.admin.deleteUser(created.user.id);
-    return { ok: false, error: profileError.message };
+    return { ok: false, error: safeDbError(profileError, "No se pudo crear el perfil del vendedor.") };
   }
 
   revalidatePath("/vendedores");
@@ -72,20 +111,58 @@ export async function actualizarEstadoVendedor(id: string, active: boolean): Pro
   if (id === ctx.userId) {
     return { ok: false, error: "No puedes desactivarte a ti mismo." };
   }
-  const supabase = await createClient();
-  const { error } = await supabase.from("profiles").update({ active }).eq("id", id);
 
-  if (error) return { ok: false, error: error.message };
+  const supabase = await createClient();
+
+  const miembro = await assertMiembroDelNegocio(supabase, ctx.business.id, id);
+  if (!miembro.ok) return { ok: false, error: miembro.error };
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ active })
+    .eq("id", id)
+    .eq("business_id", ctx.business.id);
+
+  if (error) return { ok: false, error: safeDbError(error) };
   revalidatePath("/vendedores");
   return { ok: true };
 }
 
+/**
+ * Regenera la contraseña de un vendedor del negocio.
+ *
+ * `updateUserById` corre con la service role key, que ignora RLS y puede
+ * tocar CUALQUIER usuario del proyecto de Supabase — incluidos los
+ * administradores de otros negocios. Por eso el `id` que llega del
+ * navegador se valida antes contra `profiles`: debe existir, pertenecer al
+ * mismo negocio y ser un vendedor (un admin no puede resetear la
+ * contraseña de otro admin; para eso está el flujo de "olvidé mi
+ * contraseña" de Supabase Auth).
+ */
 export async function resetPasswordVendedor(id: string): Promise<ActionResult> {
-  await requireAdmin();
+  const ctx = await requireAdmin();
+
+  if (id === ctx.userId) {
+    return { ok: false, error: "Cambia tu propia contraseña desde Configuración." };
+  }
+
+  const supabase = await createClient();
+
+  const miembro = await assertMiembroDelNegocio(supabase, ctx.business.id, id);
+  if (!miembro.ok) return { ok: false, error: miembro.error };
+
+  if (miembro.role !== "vendedor") {
+    return { ok: false, error: "Sólo se puede regenerar la contraseña de un vendedor." };
+  }
+
   const admin = createAdminClient();
   const tempPassword = generateTempPassword();
 
   const { error } = await admin.auth.admin.updateUserById(id, { password: tempPassword });
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    console.error("[resetPasswordVendedor] updateUserById", error);
+    return { ok: false, error: "No se pudo regenerar la contraseña." };
+  }
+
   return { ok: true, tempPassword };
 }

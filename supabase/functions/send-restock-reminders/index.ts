@@ -35,17 +35,38 @@ interface UpcomingRow {
   days_until: number;
 }
 
+/**
+ * Comparación en tiempo constante. Un `!==` normal corta en el primer
+ * byte distinto, lo que permite deducir el secreto midiendo tiempos de
+ * respuesta a base de intentos.
+ */
+function secretsMatch(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const bufA = encoder.encode(a);
+  const bufB = encoder.encode(b);
+  // La longitud sí se filtra; se compara igual byte a byte para no cortar
+  // antes de tiempo cuando coinciden en tamaño.
+  if (bufA.length !== bufB.length) return false;
+  let diff = 0;
+  for (let i = 0; i < bufA.length; i++) diff |= bufA[i] ^ bufB[i];
+  return diff === 0;
+}
+
 Deno.serve(async (req: Request) => {
-  // Protección simple: exige un secreto compartido para evitar que
-  // cualquiera dispare la función (además de requerir la Service Role
-  // Key para las consultas). Configúralo como CRON_SECRET en las
-  // variables de entorno de la función y en el header al programarla.
+  // Exige un secreto compartido para que nadie más pueda dispararla.
+  // Antes, si CRON_SECRET no estaba configurado la comprobación se
+  // saltaba por completo y la función quedaba abierta a cualquiera que
+  // conociera su URL: un olvido de configuración no debe traducirse en
+  // "sin autenticación".
   const cronSecret = Deno.env.get("CRON_SECRET");
-  if (cronSecret) {
-    const provided = req.headers.get("x-cron-secret");
-    if (provided !== cronSecret) {
-      return new Response("No autorizado", { status: 401 });
-    }
+  if (!cronSecret) {
+    console.error("CRON_SECRET no está configurado; la función se niega a ejecutarse.");
+    return new Response("No configurado", { status: 500 });
+  }
+
+  const provided = req.headers.get("x-cron-secret");
+  if (!provided || !secretsMatch(provided, cronSecret)) {
+    return new Response("No autorizado", { status: 401 });
   }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -117,9 +138,18 @@ Deno.serve(async (req: Request) => {
         );
         sent += 1;
       } catch (err) {
-        console.error("Push falló, eliminando suscripción caduca", sub.endpoint, err);
-        // 404/410 = la suscripción ya no existe en el navegador del usuario.
-        await supabase.from("push_subscriptions").delete().eq("id", sub.id);
+        // Sólo 404/410 significan "esta suscripción ya no existe en el
+        // navegador del usuario". Cualquier otro error (timeout, 500 del
+        // servicio de push, corte de red) es transitorio: borrar la
+        // suscripción ahí dejaría al usuario sin notificaciones para
+        // siempre, sin que él hiciera nada.
+        const statusCode = (err as { statusCode?: number })?.statusCode;
+        if (statusCode === 404 || statusCode === 410) {
+          console.warn("Suscripción caduca, eliminando", sub.endpoint);
+          await supabase.from("push_subscriptions").delete().eq("id", sub.id);
+        } else {
+          console.error("Push falló (se conserva la suscripción)", sub.endpoint, statusCode, err);
+        }
       }
     }
   }

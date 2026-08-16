@@ -11,6 +11,7 @@ import { Field, Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { loginSchema } from "@/lib/validation";
+import { safeNextPath } from "@/lib/safe-redirect";
 import type { z } from "zod";
 
 type FormValues = z.infer<typeof loginSchema>;
@@ -51,7 +52,9 @@ function LoginForm() {
       return;
     }
 
-    const next = searchParams.get("next") || "/dashboard";
+    // `next` viene de la URL, así que se normaliza a una ruta interna
+    // conocida antes de navegar (evita redirector abierto / phishing).
+    const next = safeNextPath(searchParams.get("next"));
     router.replace(next);
     router.refresh();
   }

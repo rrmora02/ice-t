@@ -16,6 +16,23 @@ interface CartLine extends SaleCartItem {
   unit: string;
 }
 
+/**
+ * Distingue "no hubo red" de "el servidor rechazó la venta".
+ *
+ * Importa porque el fallback offline sólo tiene sentido en el primer caso:
+ * si el rechazo viene de una regla de negocio (producto de otro negocio,
+ * cantidad inválida, perfil desactivado), encolar la venta la deja
+ * reintentándose para siempre contra un error que nunca se va a arreglar
+ * solo — y el vendedor cree que quedó registrada.
+ */
+function isNetworkError(err: unknown): boolean {
+  if (err instanceof TypeError) return true; // fetch abortado / sin red
+  const code = (err as { code?: string } | null)?.code;
+  // PostgrestError siempre trae code (SQLSTATE o un código propio del
+  // cliente); si no hay ninguno, se asume fallo de transporte.
+  return !code;
+}
+
 export function VentasClient({
   products,
   customers,
@@ -147,8 +164,20 @@ export function VentasClient({
         resetForm();
         setSubmitting(false);
         return;
-      } catch {
-        // Cae a guardado offline si falla la red a media petición.
+      } catch (err) {
+        // Sólo se cae al guardado offline si el problema fue la red. Un
+        // rechazo del servidor se muestra tal cual: reintentarlo en
+        // segundo plano no lo va a resolver.
+        if (!isNetworkError(err)) {
+          setFeedback({
+            type: "error",
+            message:
+              (err as { message?: string })?.message ??
+              "No se pudo registrar la venta. Revisa los datos e intenta de nuevo.",
+          });
+          setSubmitting(false);
+          return;
+        }
       }
     }
 

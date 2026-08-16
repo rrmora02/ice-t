@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...pero la plantilla sin secretos sí se versiona: el README manda
+# copiarla y sin esta excepción nunca llegaba al repositorio.
+!.env.local.example
 
 # vercel
 .vercel

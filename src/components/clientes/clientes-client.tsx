@@ -21,7 +21,7 @@ import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { formatDate, todayLocalISODate } from "@/lib/format";
 import { clienteSchema } from "@/lib/validation";
-import { crearCliente, actualizarCliente, eliminarCliente, registrarEntrega } from "@/app/(app)/clientes/actions";
+import { crearCliente, actualizarCliente, desactivarCliente, registrarEntrega } from "@/app/(app)/clientes/actions";
 import type { Customer, Profile, Role } from "@/types/db";
 import type { z } from "zod";
 
@@ -91,7 +91,7 @@ export function ClientesClient({
   function handleDelete(id: string) {
     if (!confirm("¿Eliminar este cliente?")) return;
     startTransition(async () => {
-      const res = await eliminarCliente(id);
+      const res = await desactivarCliente(id);
       if (!res.ok) {
         setError(res.error ?? "No se pudo eliminar");
         return;

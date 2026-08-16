@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { clearLocalBusinessData } from "@/lib/offline/clear-local-data";
 
 export default function CuentaDesactivadaPage() {
   const router = useRouter();
@@ -11,6 +12,7 @@ export default function CuentaDesactivadaPage() {
   async function handleLogout() {
     const supabase = createClient();
     await supabase.auth.signOut();
+    await clearLocalBusinessData();
     router.replace("/login");
   }
 
