@@ -71,6 +71,44 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* Campos de fecha y hora ------------------------------------------------ */
+/*
+ * En WebKit (Safari, y por tanto TODO navegador en iPhone) estos campos
+ * traen una apariencia nativa con ancho intrínseco propio: se dimensionan
+ * según el texto de la fecha más su relleno interno, ignorando el
+ * `width: 100%` del contenedor. El resultado es que se desbordan un poco
+ * hacia la derecha en pantallas angostas, incluso ocupando toda la fila.
+ * `-webkit-appearance: none` los devuelve al flujo normal.
+ *
+ * En Chromium esa misma regla oculta el icono del calendario, así que se
+ * vuelve a mostrar explícitamente más abajo.
+ */
+input[type="date"],
+input[type="datetime-local"],
+input[type="time"],
+input[type="month"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* WebKit alinea el valor a la derecha y le pone un margen propio. */
+input[type="date"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
+
+/* Recupera el icono que `appearance: none` esconde en Chromium. */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  opacity: 1;
+  cursor: pointer;
+}
+
 /* Utilidades compartidas ------------------------------------------------ */
 
 .brand-gradient {
