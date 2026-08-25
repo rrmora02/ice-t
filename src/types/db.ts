@@ -120,6 +120,17 @@ export interface SalesDailyRow {
   total_amount: number;
 }
 
+export interface SalesByCustomerRow {
+  business_id: string;
+  customer_id: string | null;
+  customer_name: string;
+  customer_type: CustomerType | null;
+  sale_date: string;
+  sales_count: number;
+  total_amount: number;
+  last_sale_at: string;
+}
+
 export interface UpcomingRestockRow {
   customer_id: string;
   business_id: string;

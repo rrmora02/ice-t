@@ -22,7 +22,10 @@ export function Badge({
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium",
+        // `whitespace-nowrap`: una insignia es una pastilla de una sola línea.
+        // Sin esto, "5 ventas" o "Vencido hace 3d" se parten en dos renglones
+        // en cuanto el contenedor se estrecha en móvil.
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium",
         toneClasses[tone],
         className
       )}
