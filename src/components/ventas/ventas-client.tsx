@@ -70,6 +70,9 @@ export function VentasClient({
     [cart]
   );
   const itemCount = Object.values(cart).filter((l) => l.quantity > 0).length;
+  // El aviso sólo aparece cuando ya hay algo en el carrito: con la pantalla
+  // recién abierta y vacía, señalar el campo en rojo sería ruido.
+  const faltaCliente = itemCount > 0 && !customerId;
 
   function setQty(product: IceProduct, quantity: number) {
     setCart((prev) => {
@@ -98,7 +101,7 @@ export function VentasClient({
   }
 
   async function handleSubmit() {
-    if (itemCount === 0) return;
+    if (itemCount === 0 || !customerId) return;
     setSubmitting(true);
 
     const clientUuid = crypto.randomUUID();
@@ -110,7 +113,7 @@ export function VentasClient({
       quantity,
     }));
     const payload = {
-      customer_id: customerId || null,
+      customer_id: customerId,
       items,
       payment_method: paymentMethod,
       client_uuid: clientUuid,
@@ -285,9 +288,16 @@ export function VentasClient({
             {itemCount > 0 && <Badge tone="brand">{itemCount} producto(s)</Badge>}
           </div>
 
-          <Field label="Cliente (opcional)">
-            <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-              <option value="">Venta de mostrador</option>
+          <Field
+            label="Cliente"
+            error={faltaCliente ? "Selecciona a quién le vendiste." : undefined}
+          >
+            <Select
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value)}
+              aria-invalid={faltaCliente}
+            >
+              <option value="">Selecciona un cliente…</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -324,7 +334,13 @@ export function VentasClient({
           </div>
 
 
-          <Button size="lg" className="justify-center" disabled={itemCount === 0} loading={submitting} onClick={handleSubmit}>
+          <Button
+            size="lg"
+            className="justify-center"
+            disabled={itemCount === 0 || !customerId}
+            loading={submitting}
+            onClick={handleSubmit}
+          >
             Registrar venta
           </Button>
 

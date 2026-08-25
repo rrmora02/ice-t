@@ -120,6 +120,12 @@ export interface SalesDailyRow {
   total_amount: number;
 }
 
+/** Un producto dentro del desglose diario de un cliente. */
+export interface SoldProductSummary {
+  name: string;
+  quantity: number;
+}
+
 export interface SalesByCustomerRow {
   business_id: string;
   customer_id: string | null;
@@ -129,6 +135,8 @@ export interface SalesByCustomerRow {
   sales_count: number;
   total_amount: number;
   last_sale_at: string;
+  /** Desglose de lo vendido ese día, de mayor a menor cantidad. */
+  products: SoldProductSummary[];
 }
 
 export interface UpcomingRestockRow {

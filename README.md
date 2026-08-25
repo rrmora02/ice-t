@@ -21,9 +21,12 @@ Push (VAPID).
    - `supabase/migrations/0003_manual_restock_reminders.sql`
    - `supabase/migrations/0004_security_hardening.sql`
    - `supabase/migrations/0005_sales_by_customer.sql`
+   - `supabase/migrations/0006_venta_requiere_cliente.sql`
 
    El 0005 añade la vista que alimenta el detalle de **ventas por
-   cliente** del dashboard; sin él esa tarjeta sale vacía.
+   cliente** del dashboard; sin él esa tarjeta sale vacía. El 0006 le
+   agrega el desglose de productos y hace que **toda venta exija un
+   cliente** (`create_sale` rechaza las de mostrador).
 
    El 0004 es **obligatorio**: es el que hace que el precio de una venta lo
    ponga el servidor y no el navegador, acota la fecha de la venta, cierra

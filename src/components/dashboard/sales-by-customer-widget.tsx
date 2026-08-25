@@ -5,7 +5,7 @@ import { Users, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
 import { shiftISODate } from "@/lib/business-date";
 import type { SalesByCustomerRow } from "@/types/db";
 
@@ -142,19 +142,35 @@ export function SalesByCustomerWidget({
             {filas.map((r) => (
               <div
                 key={r.customer_id ?? "mostrador"}
-                className="flex items-center justify-between gap-3 border-b border-[var(--border)] py-2.5 last:border-b-0"
+                className="border-b border-[var(--border)] py-2.5 last:border-b-0"
               >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-sm font-medium">
-                    {r.customer_name}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-sm font-medium">
+                      {r.customer_name}
+                    </span>
+                    <Badge tone="neutral" className="shrink-0">
+                      {r.sales_count} {r.sales_count === 1 ? "venta" : "ventas"}
+                    </Badge>
+                  </div>
+                  <span className="shrink-0 text-sm font-semibold tabular-nums">
+                    {formatCurrency(Number(r.total_amount), currency)}
                   </span>
-                  <Badge tone="neutral" className="shrink-0">
-                    {r.sales_count} {r.sales_count === 1 ? "venta" : "ventas"}
-                  </Badge>
                 </div>
-                <span className="shrink-0 text-sm font-semibold tabular-nums">
-                  {formatCurrency(Number(r.total_amount), currency)}
-                </span>
+
+                {/* Desglose de lo que se llevó: "14 × Bolsa 1 kg". Las
+                    cantidades pasan por formatNumber porque el hielo a
+                    granel se vende en decimales (2.5 kg). */}
+                {r.products.length > 0 && (
+                  <p className="mt-1 text-xs leading-relaxed text-[var(--foreground-muted)]">
+                    {r.products
+                      .map(
+                        (p) =>
+                          `${formatNumber(Number(p.quantity))} × ${p.name}`,
+                      )
+                      .join(" · ")}
+                  </p>
+                )}
               </div>
             ))}
           </div>

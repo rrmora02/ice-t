@@ -149,7 +149,9 @@ export const saleItemSchema = z.object({
 });
 
 export const createSaleSchema = z.object({
-  customer_id: z.string().uuid().nullable().optional(),
+  // Toda venta va a nombre de un cliente: el negocio necesita saber quién
+  // compró, y así el detalle del dashboard no muestra "Venta de mostrador".
+  customer_id: z.string().uuid("Selecciona el cliente de esta venta"),
   items: z.array(saleItemSchema).min(1, "Agrega al menos un producto"),
   payment_method: z.enum(["efectivo", "transferencia", "credito"]),
   client_uuid: z.string().uuid(),
