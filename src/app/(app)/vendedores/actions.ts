@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { vendedorInviteSchema, primerMensajeDeError } from "@/lib/validation";
 import { safeDbError } from "@/lib/errors";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Role } from "@/types/db";
 
 export interface ActionResult {
   ok: boolean;
@@ -15,7 +16,8 @@ export interface ActionResult {
   tempPassword?: string;
 }
 
-const PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+const PASSWORD_ALPHABET =
+  "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
 
 /**
  * Password temporal legible (el vendedor debe cambiarla desde
@@ -42,7 +44,7 @@ function generateTempPassword(length = 14) {
 async function assertMiembroDelNegocio(
   supabase: SupabaseClient,
   businessId: string,
-  targetId: string
+  targetId: string,
 ): Promise<{ ok: true; role: string } | { ok: false; error: string }> {
   const { data, error } = await supabase
     .from("profiles")
@@ -52,8 +54,37 @@ async function assertMiembroDelNegocio(
     .maybeSingle();
 
   if (error) return { ok: false, error: safeDbError(error) };
-  if (!data) return { ok: false, error: "Ese usuario no pertenece a tu negocio." };
+  if (!data)
+    return { ok: false, error: "Ese usuario no pertenece a tu negocio." };
   return { ok: true, role: data.role as string };
+}
+
+/**
+ * Cuenta los administradores activos del negocio, sin contar a `excluyendo`.
+ *
+ * Existe para una sola regla: un negocio nunca puede quedarse sin ningún
+ * administrador activo. Si eso pasa, nadie puede volver a gestionar
+ * precios, gastos ni cuentas, y recuperarlo exige entrar al SQL Editor de
+ * Supabase.
+ */
+async function contarOtrosAdminsActivos(
+  supabase: SupabaseClient,
+  businessId: string,
+  excluyendo: string,
+): Promise<number | null> {
+  const { count, error } = await supabase
+    .from("profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("business_id", businessId)
+    .eq("role", "admin")
+    .eq("active", true)
+    .neq("id", excluyendo);
+
+  if (error) {
+    console.error("[contarOtrosAdminsActivos]", error);
+    return null;
+  }
+  return count ?? 0;
 }
 
 /**
@@ -72,19 +103,24 @@ export async function crearVendedor(input: unknown): Promise<ActionResult> {
   const admin = createAdminClient();
   const tempPassword = generateTempPassword();
 
-  const { data: created, error: createError } = await admin.auth.admin.createUser({
-    email: parsed.data.email,
-    password: tempPassword,
-    email_confirm: true,
-    user_metadata: { full_name: parsed.data.fullName },
-  });
+  const { data: created, error: createError } =
+    await admin.auth.admin.createUser({
+      email: parsed.data.email,
+      password: tempPassword,
+      email_confirm: true,
+      user_metadata: { full_name: parsed.data.fullName },
+    });
 
   if (createError || !created.user) {
     // No se refleja el mensaje de Supabase tal cual: distingue entre
     // "correo ya registrado" y otros fallos, lo que permitiría sondear
     // qué correos existen en la plataforma.
     console.error("[crearVendedor] createUser", createError);
-    return { ok: false, error: "No se pudo crear la cuenta. Verifica el correo e intenta de nuevo." };
+    return {
+      ok: false,
+      error:
+        "No se pudo crear la cuenta. Verifica el correo e intenta de nuevo.",
+    };
   }
 
   const { error: profileError } = await admin.from("profiles").insert({
@@ -99,14 +135,23 @@ export async function crearVendedor(input: unknown): Promise<ActionResult> {
   if (profileError) {
     // Revertimos la cuenta huérfana en auth para no dejar basura.
     await admin.auth.admin.deleteUser(created.user.id);
-    return { ok: false, error: safeDbError(profileError, "No se pudo crear el perfil del vendedor.") };
+    return {
+      ok: false,
+      error: safeDbError(
+        profileError,
+        "No se pudo crear el perfil del vendedor.",
+      ),
+    };
   }
 
   revalidatePath("/vendedores");
   return { ok: true, tempPassword };
 }
 
-export async function actualizarEstadoVendedor(id: string, active: boolean): Promise<ActionResult> {
+export async function actualizarEstadoVendedor(
+  id: string,
+  active: boolean,
+): Promise<ActionResult> {
   const ctx = await requireAdmin();
   if (id === ctx.userId) {
     return { ok: false, error: "No puedes desactivarte a ti mismo." };
@@ -116,6 +161,21 @@ export async function actualizarEstadoVendedor(id: string, active: boolean): Pro
 
   const miembro = await assertMiembroDelNegocio(supabase, ctx.business.id, id);
   if (!miembro.ok) return { ok: false, error: miembro.error };
+
+  // Desactivar al último administrador dejaría el negocio sin quien pueda
+  // gestionarlo.
+  if (!active && miembro.role === "admin") {
+    const otros = await contarOtrosAdminsActivos(supabase, ctx.business.id, id);
+    if (otros === null)
+      return { ok: false, error: "No se pudo verificar el estado del equipo." };
+    if (otros === 0) {
+      return {
+        ok: false,
+        error:
+          "Es el único administrador activo. Nombra a otro antes de desactivarlo.",
+      };
+    }
+  }
 
   const { error } = await supabase
     .from("profiles")
@@ -143,7 +203,10 @@ export async function resetPasswordVendedor(id: string): Promise<ActionResult> {
   const ctx = await requireAdmin();
 
   if (id === ctx.userId) {
-    return { ok: false, error: "Cambia tu propia contraseña desde Configuración." };
+    return {
+      ok: false,
+      error: "Cambia tu propia contraseña desde Configuración.",
+    };
   }
 
   const supabase = await createClient();
@@ -152,17 +215,83 @@ export async function resetPasswordVendedor(id: string): Promise<ActionResult> {
   if (!miembro.ok) return { ok: false, error: miembro.error };
 
   if (miembro.role !== "vendedor") {
-    return { ok: false, error: "Sólo se puede regenerar la contraseña de un vendedor." };
+    return {
+      ok: false,
+      error: "Sólo se puede regenerar la contraseña de un vendedor.",
+    };
   }
 
   const admin = createAdminClient();
   const tempPassword = generateTempPassword();
 
-  const { error } = await admin.auth.admin.updateUserById(id, { password: tempPassword });
+  const { error } = await admin.auth.admin.updateUserById(id, {
+    password: tempPassword,
+  });
   if (error) {
     console.error("[resetPasswordVendedor] updateUserById", error);
     return { ok: false, error: "No se pudo regenerar la contraseña." };
   }
 
   return { ok: true, tempPassword };
+}
+
+/**
+ * Cambia el rol de un miembro del negocio entre `admin` y `vendedor`.
+ *
+ * No hace falta la service role key: quien llama ya es administrador, así
+ * que la política RLS `profiles_update_self_or_admin` y el trigger
+ * `protect_profile_privileged_columns` permiten el cambio con la sesión
+ * normal. (Ese trigger es justo el que impide hacerlo con un UPDATE suelto
+ * desde el SQL Editor, donde no hay sesión.)
+ */
+export async function cambiarRolMiembro(
+  id: string,
+  nuevoRol: Role,
+): Promise<ActionResult> {
+  const ctx = await requireAdmin();
+
+  if (nuevoRol !== "admin" && nuevoRol !== "vendedor") {
+    return { ok: false, error: "Rol inválido." };
+  }
+
+  // Cambiarse el rol a uno mismo sólo sirve para quitarse permisos y
+  // quedar fuera de esta pantalla; que lo haga otro administrador.
+  if (id === ctx.userId) {
+    return {
+      ok: false,
+      error: "No puedes cambiar tu propio rol. Pídeselo a otro administrador.",
+    };
+  }
+
+  const supabase = await createClient();
+
+  const miembro = await assertMiembroDelNegocio(supabase, ctx.business.id, id);
+  if (!miembro.ok) return { ok: false, error: miembro.error };
+
+  if (miembro.role === nuevoRol) {
+    return { ok: false, error: "Esa persona ya tiene ese rol." };
+  }
+
+  if (nuevoRol === "vendedor") {
+    const otros = await contarOtrosAdminsActivos(supabase, ctx.business.id, id);
+    if (otros === null)
+      return { ok: false, error: "No se pudo verificar el estado del equipo." };
+    if (otros === 0) {
+      return {
+        ok: false,
+        error:
+          "Es el único administrador activo. Nombra a otro antes de quitarle el rol.",
+      };
+    }
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ role: nuevoRol })
+    .eq("id", id)
+    .eq("business_id", ctx.business.id);
+
+  if (error) return { ok: false, error: safeDbError(error) };
+  revalidatePath("/vendedores");
+  return { ok: true };
 }
