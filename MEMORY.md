@@ -174,6 +174,22 @@ en CSS o JS con hash en el nombre no hace falta.
 
 ---
 
+## Herramientas y proceso
+
+**Toda edición por script lleva aserción.** `str.replace` en Python
+—y `sed` sin `-E ... /q`— no fallan cuando el patrón no coincide: devuelven
+el texto igual y el script termina en 0. Pasó de verdad: el commit `740e33e`
+decía "plan técnico" y el plan nunca llegó al archivo, porque el patrón no
+coincidía con el documento real. Antes de sustituir, afirma que el patrón
+existe; al terminar, afirma que el resultado tiene lo que debía tener. Un
+fallo ruidoso cuesta un minuto; un commit que miente cuesta la confianza en
+el historial.
+
+Si un comando genera un archivo y otro lo commitea, **únelos con `&&`**. En
+líneas separadas, el commit se ejecuta aunque el primero haya fallado.
+
+---
+
 ## Decisiones de producto
 
 - **Toda venta va a nombre de un cliente** (migración 0006). Ya no existe

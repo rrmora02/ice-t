@@ -1,6 +1,6 @@
 # 0001 · Eliminar la pantalla negra al abrir la app en frío
 
-- **Estado:** planeado
+- **Estado:** implementado
 - **Fecha:** 2026-10-07
 - **Migración asociada:** ninguna
 
@@ -50,14 +50,18 @@ salto brusco.
       momento se ve un fondo negro ajeno a la app.
 - [ ] Al abrir la app en frío con el teléfono en **modo claro**, tampoco se
       ve un destello blanco distinto al fondo de la app.
-- [ ] Mientras el servidor resuelve el dashboard se muestra un indicador de
+- [x] Mientras el servidor resuelve el dashboard se muestra un indicador de
       carga, no una pantalla vacía.
-- [ ] El indicador aparece también al navegar entre secciones si la
+- [x] El indicador aparece también al navegar entre secciones si la
       respuesta tarda.
-- [ ] Nada de lo anterior retrasa la primera pintura: el indicador no puede
+- [x] Nada de lo anterior retrasa la primera pintura: el indicador no puede
       depender de que cargue JavaScript de la aplicación.
-- [ ] Con la app ya abierta y navegando, no aparece ningún parpadeo nuevo
+- [x] Con la app ya abierta y navegando, no aparece ningún parpadeo nuevo
       que antes no estuviera.
+
+Los dos primeros quedan sin marcar a propósito: el fondo de `html` está
+medido en Chromium, pero el problema se reportó en Safari y aquí no hay
+WebKit. Los confirma el usuario en su teléfono.
 
 ## Fuera de alcance
 
@@ -137,16 +141,121 @@ necesario: dentro de una misma petición el resultado es idéntico.
 
 ## Plan técnico
 
-_Pendiente: se llena en `/spec-plan`._
+El hallazgo cambia el orden de prioridades. Un esqueleto bonito sobre una
+espera de 4 segundos sigue siendo una espera de 4 segundos, así que primero
+se recorta la espera y después se cubre lo que queda.
+
+Tres cambios independientes entre sí. Ninguno toca base de datos,
+`sw.js` ni `offline.html`.
+
+### 1. Memoizar `requireSession()` por petición
+
+`src/lib/session.ts`. Envolver `requireSession` en `cache()` de React.
+
+`cache()` memoiza con alcance de **una** petición: la segunda llamada
+dentro del mismo render devuelve el resultado de la primera sin volver a
+Supabase. Pasa de seis viajes encadenados a tres.
+
+Es importante que el alcance sea la petición y no el proceso: una caché que
+sobreviviera a la petición podría servirle a un usuario la sesión de otro.
+`cache()` de React no lo hace, y por eso se usa esta y no un `Map` propio.
+
+`requireAdmin()` no necesita cambios: llama a la versión memoizada y hereda
+el ahorro.
+
+### 2. Fondo explícito en `html`
+
+`src/app/globals.css`. Añadir `background: var(--background)` a la regla de
+`html`.
+
+Es la causa 1 del problema. Con `color-scheme: light dark` el navegador
+pinta el lienzo según la preferencia del sistema antes de que el documento
+tenga estilos propios, y en modo oscuro eso es negro. Definiendo el fondo
+en `html` —no sólo en `body`— el lienzo arranca ya del color de la app.
+
+### 3. Esqueletos de carga
+
+- `src/components/ui/skeleton.tsx` (nuevo): `Skeleton` para un bloque, y
+  `SkeletonScreen` como envoltorio.
+- `src/app/(app)/dashboard/loading.tsx`, `ventas/loading.tsx`,
+  `clientes/loading.tsx` (nuevos).
+
+`loading.tsx` es el fallback de streaming que Next.js envía **antes** de
+terminar de resolver la página. No depende de que cargue JavaScript de la
+aplicación: llega en el primer trozo del HTML. Eso satisface el criterio de
+"no retrasa la primera pintura".
+
+El esqueleto del dashboard reproduce la forma real de la pantalla —número
+de tarjetas, altura de la cabecera— para que al llegar los datos no se note
+un salto de maquetación.
+
+Las etiquetas de accesibilidad van una sola vez en `SkeletonScreen`, no por
+bloque: con lector de pantalla se oye "Cargando…" en lugar de una ristra de
+elementos vacíos. Los bloques van `aria-hidden`.
+
+### Lo que este plan no arregla
+
+El instante **anterior** a que exista un documento —desde que se toca el
+icono hasta que iOS entrega la primera pintura al navegador— lo controla el
+sistema operativo. La única palanca era `apple-touch-startup-image`, y se
+descartó en las decisiones. Así que puede quedar un destello corto que no
+depende de este código.
 
 ## Tareas
 
-_Pendiente._
+- [x] `requireSession` envuelto en `cache()` de React.
+- [x] `background: var(--background)` en la regla de `html`.
+- [x] `Skeleton` y `SkeletonScreen` en `src/components/ui/skeleton.tsx`.
+- [x] `loading.tsx` en `dashboard`, `ventas` y `clientes`.
+- [x] Typecheck, lint y build en verde.
+- [x] Fondo de `html` medido en modo claro y oscuro.
+- [x] Capturas a 360 px en ambos esquemas, sin desborde horizontal.
+- [ ] Confirmación del arranque en frío real en iPhone (la hace el usuario).
 
 ## Cómo se verifica
 
-_Pendiente._
+Lo comprobado en este entorno:
+
+1. `npm run typecheck`, `npm run lint` y `npm run build`. En verde; el lint
+   deja tres avisos que ya existían antes de este cambio.
+2. Fondo de `html` medido en el navegador, no deducido del CSS:
+   `rgb(246, 249, 252)` en modo claro y `rgb(11, 18, 32)` en oscuro.
+   Ninguno es negro, que era el punto.
+3. `sr-only` comprobado en el CSS compilado: Tailwind la emite, así que la
+   etiqueta de `SkeletonScreen` queda oculta de verdad y no como texto
+   visible.
+4. Capturas a 360 px de ancho, en claro y oscuro, de los tres esqueletos.
+   Sin desborde horizontal.
+
+Lo que **no** se puede comprobar aquí, y por qué:
+
+- **El arranque en frío en iPhone.** En este contenedor no hay WebKit; las
+  capturas son Chromium. El problema se reportó en Safari instalado en la
+  pantalla de inicio, que es justo el motor que falta.
+- **La mejora de latencia en números.** Pasar de seis viajes a tres es
+  verificable leyendo el código, pero cuánto se nota depende de la señal del
+  teléfono y de la latencia de Supabase. No hay forma de medirlo desde aquí.
+- **El arranque sin conexión.** Se razona, no se mide: no se tocó `sw.js`
+  ni `offline.html`, y el esqueleto es un fallback del servidor, así que el
+  Service Worker responde antes de que Next llegue a intervenir. Conviene
+  confirmarlo en modo avión.
+
+Queda pendiente, entonces, que el usuario abra la app en frío en su iPhone
+—en modo oscuro, instalada en la pantalla de inicio— y diga si todavía ve
+negro y si la espera se siente más corta.
 
 ## Notas de implementación
 
-_Pendiente._
+Implementado en `94b0e69`.
+
+**Error en el registro de commits.** El commit `740e33e` se tituló "spec
+0001: plan tecnico", pero el plan **nunca llegó al archivo**. El script que
+lo escribía usaba `str.replace` con un patrón que no coincidía con el texto
+real del documento, y `replace` no falla cuando no encuentra nada: devuelve
+la cadena igual. El commit quedó con un mensaje que describía un contenido
+inexistente. El plan que está arriba se escribió después, en el commit que
+acompaña a esta nota.
+
+Lección, anotada también en `MEMORY.md`: **toda edición por script lleva
+aserción**. Si se busca un patrón para sustituirlo, hay que afirmar primero
+que existe; si no, el fallo es silencioso y queda un commit que miente.
