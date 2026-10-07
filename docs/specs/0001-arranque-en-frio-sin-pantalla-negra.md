@@ -1,6 +1,6 @@
 # 0001 · Eliminar la pantalla negra al abrir la app en frío
 
-- **Estado:** borrador
+- **Estado:** planeado
 - **Fecha:** 2026-10-07
 - **Migración asociada:** ninguna
 
@@ -104,26 +104,36 @@ y **no se puede comprobar aquí en absoluto**.
 
 ---
 
-## Preguntas abiertas
+## Decisiones
 
-1. **¿Qué debe mostrarse mientras carga?** Dos caminos razonables:
-   - *Esqueleto*: el contorno gris de las tarjetas del dashboard. Se siente
-     más rápido y la transición es suave.
-   - *Marca*: el logo de Ice-T sobre el azul del manifiesto, estilo
-     pantalla de arranque de app nativa. Más vistoso, pero el salto al
-     contenido real se nota más.
+Resueltas con el usuario antes de planear:
 
-   Mi recomendación es el esqueleto para la espera del servidor, y el azul
-   de marca sólo para el instante previo a que exista cualquier HTML.
+1. **Esqueleto**, no pantalla de marca.
+2. **Sin imágenes de arranque de iOS.** Se descarta el camino
+   `apple-touch-startup-image`.
+3. **La espera real es de 3 a 4 segundos.** Eso cambia el enfoque: no es un
+   parpadeo que tapar, es latencia que reducir. Un esqueleto sobre 4
+   segundos sigue siendo una espera de 4 segundos.
 
-2. **¿Añadimos imágenes de arranque de iOS?** Son `apple-touch-startup-image`
-   por cada tamaño de pantalla: se pueden generar con `sharp`, que ya es
-   dependencia, igual que los iconos. Dan la mejor experiencia en iPhone,
-   pero añaden ~10 imágenes al repositorio y **no puedo verificarlas aquí**.
+## Hallazgo que cambia el alcance
 
-3. **¿Cuánto tarda hoy realmente?** No tengo medición. Si la espera viene
-   sobre todo de la consulta del dashboard y no del arranque, convendría
-   medir antes de decidir cuánto esfuerzo poner aquí.
+Contando los viajes a Supabase que ocurren **antes del primer byte de
+HTML** en un arranque en frío a `/dashboard`:
+
+| Dónde | Llamadas | Encadenadas |
+| --- | --- | --- |
+| `proxy.ts` → `updateSession` | `auth.getUser()` | 1 |
+| `(app)/layout.tsx` → `requireSession()` | `getUser` + `profiles` + `businesses` | 3, secuenciales |
+| `dashboard/page.tsx` → `requireSession()` | **las mismas 3, otra vez** | 3, secuenciales |
+| `dashboard/page.tsx` → datos | 6 consultas | en paralelo |
+
+Son **siete viajes de ida y vuelta**, seis de ellos en cadena, antes de que
+el servidor pueda empezar a responder. Desde un teléfono con mala señal,
+eso explica holgadamente los 3-4 segundos.
+
+Lo relevante: `requireSession()` se ejecuta **dos veces por petición** —una
+en el layout y otra en la página— y repite las tres consultas. No es
+necesario: dentro de una misma petición el resultado es idéntico.
 
 ## Plan técnico
 
