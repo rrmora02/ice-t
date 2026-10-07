@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile, Business } from "@/types/db";
@@ -15,8 +16,18 @@ export interface SessionContext {
  * al inicio de Server Components / Route Handlers que requieren sesión.
  * Redirige a /login si no hay sesión, y a /registro/completar si el
  * usuario existe en auth pero aún no tiene perfil (negocio) asociado.
+ *
+ * Va envuelto en `cache()` de React: memoización con alcance de UNA
+ * petición. Importa porque se llama dos veces por render —una en
+ * `(app)/layout.tsx` y otra en la página— y cada llamada encadena tres
+ * viajes a Supabase (getUser, profiles, businesses). Sin esto, un arranque
+ * en frío del dashboard hacía seis viajes de ida y vuelta en cadena antes
+ * de poder responder una sola línea de HTML.
+ *
+ * La caché no sobrevive a la petición, así que no hay riesgo de servirle a
+ * alguien la sesión de otro.
  */
-export async function requireSession(): Promise<SessionContext> {
+export const requireSession = cache(async function requireSession(): Promise<SessionContext> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -56,7 +67,7 @@ export async function requireSession(): Promise<SessionContext> {
     profile: profile as Profile,
     business: business as Business,
   };
-}
+});
 
 /** Igual que requireSession pero además exige rol admin. */
 export async function requireAdmin(): Promise<SessionContext> {

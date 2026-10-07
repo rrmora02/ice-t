@@ -61,6 +61,11 @@
 html {
   -webkit-text-size-adjust: 100%;
   color-scheme: light dark;
+  /* El fondo también va aquí, no sólo en `body`. Con `color-scheme` el
+     navegador pinta el lienzo según la preferencia del sistema antes de
+     que el documento tenga estilos propios: en modo oscuro eso es negro, y
+     se veía como un destello al entrar y entre navegaciones. */
+  background: var(--background);
 }
 
 body {
